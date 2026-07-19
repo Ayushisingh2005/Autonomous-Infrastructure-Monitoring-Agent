@@ -37,17 +37,26 @@ def get_recent_logs(log_group_name, minutes=10):
         log_lines.append(entry.get('@message', ''))
     return log_lines
 
-def call_gemini(prompt):
-    api_key = get_secret('monitoring-agent/gemini-key')
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+def call_groq(prompt):
+    api_key = get_secret('monitoring-agent/groq-key')
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3,
+    }
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'}, method='POST'
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+            'User-Agent': 'Mozilla/5.0 (compatible; IncidentAgent/1.0)',
+        },
+        method='POST'
     )
     with urllib.request.urlopen(req) as response:
         result = json.loads(response.read().decode('utf-8'))
-    return result['candidates'][0]['content']['parts'][0]['text']
+    return result['choices'][0]['message']['content']
 
 def post_to_slack(message):
     webhook_url = get_secret('monitoring-agent/slack-webhook')
@@ -80,9 +89,9 @@ Provide a concise incident summary with:
 Keep it under 100 words.
 """
     try:
-        summary = call_gemini(prompt)
+        summary = call_groq(prompt)
     except Exception as e:
-        summary = f"(Gemini call failed: {str(e)}) Raw logs:\n{logs_text[:500]}"
+        summary = f"(Groq call failed: {str(e)}) Raw logs:\n{logs_text[:500]}"
 
     slack_message = f"🚨 *Incident Alert: {alarm_name}*\n\n{summary}"
     post_to_slack(slack_message)
